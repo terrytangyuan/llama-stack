@@ -28,7 +28,7 @@ NC='\033[0m' # No Color
 
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 REPO_DIR=$(dirname $(dirname "$SCRIPT_DIR"))
-DOCKER_BINARY=${DOCKER_BINARY:-docker}
+DOCKER_BINARY='sudo bash /usr/local/bin/docker'
 DOCKER_OPTS=${DOCKER_OPTS:-}
 REPO_CONFIGS_DIR="$REPO_DIR/tmp/configs"
 

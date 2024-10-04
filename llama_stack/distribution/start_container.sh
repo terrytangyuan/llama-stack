@@ -54,7 +54,7 @@ if [ -n "$LLAMA_CHECKPOINT_DIR" ]; then
   DOCKER_OPTS="$DOCKER_OPTS --gpus=all"
 fi
 
-$DOCKER_BINARY run $DOCKER_OPTS -it \
+podman run $DOCKER_OPTS -it \
   -p $port:$port \
   -v "$yaml_config:/app/config.yaml" \
   $mounts \
