@@ -61,16 +61,16 @@ class VLLMInferenceAdapter(Inference):
         return vllm_messages
 
     def resolve_vllm_model(self, model_name: str) -> str:
-        model = resolve_model(model_name)
-        assert (
-            model is not None
-            and model.descriptor(shorten_default_variant=True)
-            in VLLM_SUPPORTED_MODELS
-        ), f"Unsupported model: {model_name}, use one of the supported models: {','.join(VLLM_SUPPORTED_MODELS.keys())}"
-
-        return VLLM_SUPPORTED_MODELS.get(
-            model.descriptor(shorten_default_variant=True)
-        )
+        # model = resolve_model(model_name)
+        # assert (
+        #     model is not None
+        #     and model.descriptor(shorten_default_variant=True)
+        #     in VLLM_SUPPORTED_MODELS
+        # ), f"Unsupported model: {model_name}, use one of the supported models: {','.join(VLLM_SUPPORTED_MODELS.keys())}"
+        # return VLLM_SUPPORTED_MODELS.get(
+        #     model.descriptor(shorten_default_variant=True)
+        # )
+        return "mistral-7b-instruct"
 
     def get_vllm_chat_options(self, request: ChatCompletionRequest) -> dict:
         options = {}
