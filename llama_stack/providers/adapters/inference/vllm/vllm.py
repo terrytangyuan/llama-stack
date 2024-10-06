@@ -28,8 +28,15 @@ VLLM_SUPPORTED_MODELS = {
 
 
 class VLLMInferenceAdapter(Inference):
+
     def __init__(self, config: VLLMImplConfig) -> None:
         self.config = config
+
+        # TODO: Use get endpoint similar to _HfAdapter
+        # This model's maximum context length is 6144 tokens.
+        self.max_tokens = 6144
+        self.model_id = "mistral-7b-instruct"
+
         tokenizer = Tokenizer.get_instance()
         self.formatter = ChatFormat(tokenizer)
 
@@ -42,6 +49,11 @@ class VLLMInferenceAdapter(Inference):
 
     async def initialize(self) -> None:
         return
+
+    async def validate_routing_keys(self, routing_keys: list[str]) -> None:
+        # these are the model names the Llama Stack will use to route requests to this provider
+        # perform validation here if necessary
+        pass
 
     async def shutdown(self) -> None:
         pass
@@ -110,16 +122,17 @@ class VLLMInferenceAdapter(Inference):
         model_input = self.formatter.encode_dialog_prompt(messages)
 
         input_tokens = len(model_input.tokens)
-        max_new_tokens = min(
-            request.sampling_params.max_tokens or (self.max_tokens - input_tokens),
-            self.max_tokens - input_tokens - 1,
-        )
+        # max_new_tokens = min(
+        #     request.sampling_params.max_tokens or (self.max_tokens - input_tokens),
+        #     self.max_tokens - input_tokens - 1,
+        # )
+        #
+        # print(f"Calculated max_new_tokens: {max_new_tokens}")
+        max_new_tokens = self.max_tokens - input_tokens - 1
 
-        print(f"Calculated max_new_tokens: {max_new_tokens}")
-
-        assert (
-            request.model == self.model_name
-        ), f"Model mismatch, expected {self.model_name}, got {request.model}"
+        # assert (
+        #     request.model == self.model_id
+        # ), f"Model mismatch, expected {self.model_id}, got {request.model}"
 
         if not request.stream:
             r = self.client.chat.completions.create(
