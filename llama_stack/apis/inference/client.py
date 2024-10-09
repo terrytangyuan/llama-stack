@@ -38,7 +38,15 @@ class InferenceClient(Inference):
         self.base_url = base_url
 
     async def initialize(self) -> None:
-        pass
+        print("Initializing vLLM, checking connectivity to server...")
+        try:
+            print("before sleep")
+            await asyncio.sleep(10)
+            print("after sleep")
+        except httpx.ConnectError as e:
+            raise RuntimeError(
+                "vLLM Server is not running, start it using `vllm serve` in a separate terminal"
+            ) from e
 
     async def shutdown(self) -> None:
         pass

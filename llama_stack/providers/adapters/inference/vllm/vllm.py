@@ -41,6 +41,7 @@ class VLLMInferenceAdapter(Inference):
 
         tokenizer = Tokenizer.get_instance()
         self.formatter = ChatFormat(tokenizer)
+        self.ready = False
 
     @property
     def client(self) -> OpenAI:
@@ -50,15 +51,25 @@ class VLLMInferenceAdapter(Inference):
         )
 
     async def initialize(self) -> None:
-        print("Initializing vLLM, checking connectivity to server...")
-        try:
-            print("before sleep")
-            await asyncio.sleep(20)
-            print("after sleep")
-        except httpx.ConnectError as e:
-            raise RuntimeError(
-                "vLLM Server is not running, start it using `vllm serve` in a separate terminal"
-            ) from e
+        pass
+        # print("Initializing vLLM, checking connectivity to server...")
+        # try:
+        #     print("before sleep")
+        #     await asyncio.sleep(10)
+        #     print("after sleep")
+        # except httpx.ConnectError as e:
+        #     raise RuntimeError(
+        #         "vLLM Server is not running, start it using `vllm serve` in a separate terminal"
+        #     ) from e
+
+    async def wait_for_server_ready(self) -> None:
+        if self.ready:
+            print("already loaded")
+            return
+        print("wait for server ready: before sleep")
+        await asyncio.sleep(20)
+        self.ready = True
+        print("wait for server ready: after sleep")
 
     async def validate_routing_keys(self, routing_keys: list[str]) -> None:
         # these are the model names the Llama Stack will use to route requests to this provider
@@ -113,6 +124,8 @@ class VLLMInferenceAdapter(Inference):
         stream: Optional[bool] = False,
         logprobs: Optional[LogProbConfig] = None,
     ) -> AsyncGenerator:
+        # Reproducing httpx.ReadTimeout issue
+        # await self.wait_for_server_ready()
         # wrapper request to make it easier to pass around (internal only, not exposed to API)
         request = ChatCompletionRequest(
             model=model,
