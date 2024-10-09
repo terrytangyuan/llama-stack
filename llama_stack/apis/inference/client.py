@@ -110,6 +110,7 @@ async def run_main(host: str, port: int, stream: bool, model: Optional[str]):
     message = UserMessage(
         content="hello world, write me a 2 sentence poem about the moon"
     )
+    await client.initialize()
     cprint(f"User>{message.content}", "green")
     iterator = client.chat_completion(
         model=model,

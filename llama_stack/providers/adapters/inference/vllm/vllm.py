@@ -3,8 +3,10 @@
 #
 # This source code is licensed under the terms described in the LICENSE file in
 # the root directory of this source tree.
-
+import asyncio
 from typing import AsyncGenerator
+
+import httpx
 
 from llama_models.llama3.api.chat_format import ChatFormat
 
@@ -48,7 +50,15 @@ class VLLMInferenceAdapter(Inference):
         )
 
     async def initialize(self) -> None:
-        return
+        print("Initializing vLLM, checking connectivity to server...")
+        try:
+            print("before sleep")
+            await asyncio.sleep(20)
+            print("after sleep")
+        except httpx.ConnectError as e:
+            raise RuntimeError(
+                "vLLM Server is not running, start it using `vllm serve` in a separate terminal"
+            ) from e
 
     async def validate_routing_keys(self, routing_keys: list[str]) -> None:
         # these are the model names the Llama Stack will use to route requests to this provider
