@@ -6,14 +6,13 @@
 
 import argparse
 
+import importlib.resources
 from llama_stack.cli.subcommand import Subcommand
 from llama_stack.distribution.datatypes import *  # noqa: F403
 import os
 import shutil
 from functools import lru_cache
 from pathlib import Path
-
-import pkg_resources
 
 from llama_stack.distribution.distribution import get_provider_registry
 from llama_stack.distribution.resolver import InvalidProviderError
@@ -282,14 +281,15 @@ class StackBuild(Subcommand):
             return
 
         if template_name:
-            # copy run.yaml from template to build_dir instead of generating it again
-            template_path = pkg_resources.resource_filename(
-                "llama_stack", f"templates/{template_name}/run.yaml"
-            )
             os.makedirs(build_dir, exist_ok=True)
             run_config_file = build_dir / f"{build_config.name}-run.yaml"
-            shutil.copy(template_path, run_config_file)
-
+            # copy run.yaml from template to build_dir instead of generating it again
+            template_path = (
+                importlib.resources.files("llama_stack")
+                / f"templates/{template_name}/run.yaml"
+            )
+            with importlib.resources.as_file(template_path) as path:
+                shutil.copy(path, run_config_file)
             # Find all ${env.VARIABLE} patterns
             cprint("Build Successful!", color="green")
         else:
