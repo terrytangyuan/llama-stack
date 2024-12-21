@@ -8,7 +8,7 @@ import logging
 from enum import Enum
 from typing import List
 
-import pkg_resources
+import importlib.resources
 from pydantic import BaseModel
 from termcolor import cprint
 
@@ -110,8 +110,8 @@ def build_image(build_config: BuildConfig, build_file_path: Path):
     normal_deps += SERVER_DEPENDENCIES
 
     if build_config.image_type == ImageType.docker.value:
-        script = pkg_resources.resource_filename(
-            "llama_stack", "distribution/build_container.sh"
+        script = (
+            importlib.resources.files("llama_stack") / "distribution/build_container.sh"
         )
         args = [
             script,
@@ -122,8 +122,8 @@ def build_image(build_config: BuildConfig, build_file_path: Path):
             " ".join(normal_deps),
         ]
     elif build_config.image_type == ImageType.conda.value:
-        script = pkg_resources.resource_filename(
-            "llama_stack", "distribution/build_conda_env.sh"
+        script = (
+            importlib.resources.files("llama_stack") / "distribution/build_conda_env.sh"
         )
         args = [
             script,
@@ -132,9 +132,7 @@ def build_image(build_config: BuildConfig, build_file_path: Path):
             " ".join(normal_deps),
         ]
     elif build_config.image_type == ImageType.venv.value:
-        script = pkg_resources.resource_filename(
-            "llama_stack", "distribution/build_venv.sh"
-        )
+        script = importlib.resources.files("llama_stack") / "distribution/build_venv.sh"
         args = [
             script,
             build_config.name,
