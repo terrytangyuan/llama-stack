@@ -304,6 +304,7 @@ async def process_chat_completion_stream_response(
 
     # parse tool calls and report errors
     message = formatter.decode_assistant_message_from_content(buffer, stop_reason)
+    print(message)
     parsed_tool_calls = len(message.tool_calls) > 0
     if ipython and not parsed_tool_calls:
         yield ChatCompletionResponseStreamChunk(

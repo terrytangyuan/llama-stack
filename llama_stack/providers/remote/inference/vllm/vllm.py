@@ -69,7 +69,7 @@ def build_model_aliases():
     ]
 
 
-def convert_to_vllm_tool_calls_in_response(
+def convert_to_vllm_tool_calls_in_response_non_streaming(
     tool_calls,
 ) -> List[ToolCall]:
     if not tool_calls:
@@ -84,6 +84,27 @@ def convert_to_vllm_tool_calls_in_response(
             call_id=call.id,
             tool_name=call.function.name,
             arguments=call_function_arguments,
+        )
+        for call in tool_calls
+    ]
+
+
+def convert_to_vllm_tool_calls_in_response_streaming(
+    tool_calls,
+) -> List[ToolCall]:
+    if not tool_calls:
+        return []
+
+    call_function_arguments = None
+    for call in tool_calls:
+        if call.function.arguments is not None:
+            call_function_arguments = json.loads(call.function.arguments)
+
+    return [
+        ToolCall(
+            call_id=call.id,
+            tool_name=call.function.name,
+            arguments=call_function_arguments or {},
         )
         for call in tool_calls
     ]
@@ -215,7 +236,7 @@ class VLLMInferenceAdapter(Inference, ModelsProtocolPrivate):
             completion_message=CompletionMessage(
                 content=choice.message.content or "",
                 stop_reason=convert_to_vllm_finish_reason(choice.finish_reason),
-                tool_calls=convert_to_vllm_tool_calls_in_response(choice.message.tool_calls),
+                tool_calls=convert_to_vllm_tool_calls_in_response_non_streaming(choice.message.tool_calls),
             ),
             logprobs=None,
         )
@@ -229,7 +250,37 @@ class VLLMInferenceAdapter(Inference, ModelsProtocolPrivate):
         async def _to_async_generator():
             s = client.chat.completions.create(**params)
             for chunk in s:
+                if calls := chunk.choices[0].delta.tool_calls:
+                    chunk.choices[0].delta.tool_calls = convert_to_vllm_tool_calls_in_response_streaming(calls)
                 yield chunk
+                # if chunk.choices[0].delta.tool_calls:
+                #     tool_call = chunk.choices[0].delta.tool_calls[0]
+                #     tool_calls = [
+                #             {
+                #                 "tool_name": tool_call.function.name,
+                #                 "arguments": tool_call.function.arguments or "",
+                #             }                         if tool_call.function
+                #         else None
+                #         ]
+                #
+                #     choice = ChatCompletionResponse(
+                #         completion_message=CompletionMessage(
+                #             content=chunk.choices[0].message.content or "",
+                #             stop_reason=convert_to_vllm_finish_reason(chunk.choices[0].finish_reason),
+                #             tool_calls=convert_to_vllm_tool_calls_in_response(chunk.choices[0].message.tool_calls),
+                #         ),
+                #         logprobs=None,
+                #         stop_reason=convert_to_vllm_finish_reason(chunk.choices[0].finish_reason),
+                #         text="",
+                #         tool_calls=tool_calls,
+                #     )
+                # else:
+                #     choice = ChatCompletionResponse(
+                #         finish_reason=chunk.choices[0].finish_reason,
+                #         text=chunk.choices[0].delta.content or "",
+                #         tool_calls=[],
+                #     )
+                # yield OpenAICompatCompletionResponse(choices=[choice])
 
         stream = _to_async_generator()
         async for chunk in process_chat_completion_stream_response(stream, self.formatter):
