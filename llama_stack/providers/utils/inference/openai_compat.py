@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the terms described in the LICENSE file in
 # the root directory of this source tree.
+import json
 import logging
 import warnings
 from pprint import pprint
@@ -16,7 +17,7 @@ from llama_models.datatypes import (
 )
 
 from llama_models.llama3.api.chat_format import ChatFormat
-from llama_models.llama3.api.datatypes import StopReason
+from llama_models.llama3.api.datatypes import StopReason, ToolCall
 from pydantic import BaseModel
 
 from llama_stack.apis.common.content_types import (
@@ -270,11 +271,16 @@ async def process_chat_completion_stream_response(
             print("if block")
             print("tool_call buff")
             pprint(tool_call_buf)
+
             yield ChatCompletionResponseStreamChunk(
                 event=ChatCompletionResponseEvent(
                     event_type=event_type,
                     delta=ToolCallDelta(
-                        tool_call=tool_call_buf.model_dump_json(),
+                        tool_call=ToolCall(
+                            call_id=tool_call_buf.call_id,
+                            tool_name=tool_call_buf.tool_name,
+                            arguments=json.loads(tool_call_buf.arguments),
+                        ),
                         parse_status=ToolCallParseStatus.succeeded,
                     ),
                 )
