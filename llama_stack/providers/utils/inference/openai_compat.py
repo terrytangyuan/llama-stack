@@ -5,6 +5,7 @@
 # the root directory of this source tree.
 import logging
 import warnings
+from pprint import pprint
 from typing import AsyncGenerator, Dict, List, Optional, Union
 
 from llama_models.datatypes import (
@@ -264,6 +265,7 @@ async def process_chat_completion_stream_response(
     async for chunk in stream:
         choice = chunk.choices[0]
         if choice.finish_reason:
+            print("if block\n")
             yield ChatCompletionResponseStreamChunk(
                 event=ChatCompletionResponseEvent(
                     event_type=ChatCompletionResponseEventType.complete,
@@ -273,13 +275,17 @@ async def process_chat_completion_stream_response(
                 )
             )
         elif choice.delta.tool_calls:
+            print("elif block\n")
             # We assume there is only one tool call per chunk, but emit a warning in case we're wrong
             if len(choice.delta.tool_calls) > 1:
                 warnings.warn("Groq returned multiple tool calls in one chunk. Using the first one, ignoring the rest.")
 
             # We assume Groq produces fully formed tool calls for each chunk
             tool_call = _convert_groq_tool_call(choice.delta.tool_calls[0])
+            print("tool_call\n")
+            pprint(tool_call)
             if isinstance(tool_call, ToolCall):
+                print("elif -if block\n")
                 yield ChatCompletionResponseStreamChunk(
                     event=ChatCompletionResponseEvent(
                         event_type=event_type,
@@ -290,6 +296,7 @@ async def process_chat_completion_stream_response(
                     )
                 )
             else:
+                print("elif -else block\n")
                 # Otherwise it's an UnparseableToolCall - return the raw tool call
                 yield ChatCompletionResponseStreamChunk(
                     event=ChatCompletionResponseEvent(
@@ -301,6 +308,7 @@ async def process_chat_completion_stream_response(
                     )
                 )
         else:
+            print("else block\n")
             yield ChatCompletionResponseStreamChunk(
                 event=ChatCompletionResponseEvent(
                     event_type=event_type,
