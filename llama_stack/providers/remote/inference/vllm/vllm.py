@@ -224,26 +224,16 @@ class VLLMInferenceAdapter(Inference, ModelsProtocolPrivate):
 
     async def _stream_chat_completion(self, request: ChatCompletionRequest, client: OpenAI) -> AsyncGenerator:
         params = await self._get_params(request)
-        # async def _to_async_generator():
-        #     s = client.chat.completions.create(**params)
-        #     for chunk in s:
-        #         yield chunk
-        #
-        # stream = _to_async_generator()
-        # yield convert_chat_completion_response_stream(stream)
 
         # TODO: Can we use client.completions.acreate() or maybe there is another way to directly create an async
         #  generator so this wrapper is not necessary?
-
         async def _to_async_generator():
             s = client.chat.completions.create(**params)
             for chunk in s:
                 yield chunk
 
         stream = _to_async_generator()
-        async for chunk in process_chat_completion_stream_response(stream, self.formatter, request):
-            print("chunk\n")
-            pprint(chunk)
+        async for chunk in process_chat_completion_stream_response(stream):
             yield chunk
 
     async def _nonstream_completion(self, request: CompletionRequest) -> CompletionResponse:

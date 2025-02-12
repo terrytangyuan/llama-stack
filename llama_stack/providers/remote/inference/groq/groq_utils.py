@@ -289,12 +289,6 @@ def _convert_groq_tool_call(
             tool_name=tool_call.function.name or "",
             arguments=tool_call.function.arguments or "",
         )
-        # return ToolCall(
-        #     call_id=tool_call.id or "",
-        #     tool_name=tool_call.function.name or "",
-        #     arguments=tool_call.function.arguments or {},
-        # )
-
     return ToolCall(
         call_id=tool_call.id,
         tool_name=tool_call.function.name,

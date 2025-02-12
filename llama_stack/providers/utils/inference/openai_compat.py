@@ -5,8 +5,6 @@
 # the root directory of this source tree.
 import json
 import logging
-import warnings
-from pprint import pprint
 from typing import AsyncGenerator, Dict, List, Optional, Union
 
 from llama_models.datatypes import (
@@ -260,18 +258,12 @@ async def process_completion_stream_response(
 
 async def process_chat_completion_stream_response(
     stream: AsyncGenerator[OpenAICompatCompletionResponse, None],
-    formatter: ChatFormat,
-    request: ChatCompletionRequest,
 ) -> AsyncGenerator:
     event_type = ChatCompletionResponseEventType.start
     tool_call_buf = UnparseableToolCall()
     async for chunk in stream:
         choice = chunk.choices[0]
         if choice.finish_reason:
-            print("if block")
-            print("tool_call buff")
-            pprint(tool_call_buf)
-
             yield ChatCompletionResponseStreamChunk(
                 event=ChatCompletionResponseEvent(
                     event_type=event_type,
@@ -294,24 +286,11 @@ async def process_chat_completion_stream_response(
                 )
             )
         elif choice.delta.tool_calls:
-            print("elif block")
-            # We assume there is only one tool call per chunk, but emit a warning in case we're wrong
-            if len(choice.delta.tool_calls) > 1:
-                warnings.warn("Groq returned multiple tool calls in one chunk. Using the first one, ignoring the rest.")
-
-            # We assume Groq produces fully formed tool calls for each chunk
             tool_call = _convert_groq_tool_call(choice.delta.tool_calls[0])
-            print("tool_call")
-            pprint(tool_call)
-
             tool_call_buf.tool_name += tool_call.tool_name
             tool_call_buf.call_id += tool_call.call_id
             tool_call_buf.arguments += tool_call.arguments
-
-            print("tool_call buff")
-            pprint(tool_call_buf)
         else:
-            print("else block\n")
             yield ChatCompletionResponseStreamChunk(
                 event=ChatCompletionResponseEvent(
                     event_type=event_type,
