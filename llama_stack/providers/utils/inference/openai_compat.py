@@ -3,7 +3,8 @@
 #
 # This source code is licensed under the terms described in the LICENSE file in
 # the root directory of this source tree.
-
+import logging
+import warnings
 from typing import AsyncGenerator, Dict, List, Optional, Union
 
 from llama_models.datatypes import (
@@ -14,7 +15,7 @@ from llama_models.datatypes import (
 )
 
 from llama_models.llama3.api.chat_format import ChatFormat
-from llama_models.llama3.api.datatypes import StopReason
+from llama_models.llama3.api.datatypes import StopReason, ToolCall
 from pydantic import BaseModel
 
 from llama_stack.apis.common.content_types import (
@@ -26,6 +27,7 @@ from llama_stack.apis.common.content_types import (
 )
 
 from llama_stack.apis.inference import (
+    ChatCompletionRequest,
     ChatCompletionResponse,
     ChatCompletionResponseEvent,
     ChatCompletionResponseEventType,
@@ -36,10 +38,16 @@ from llama_stack.apis.inference import (
     Message,
     TokenLogProbs,
 )
+from llama_stack.providers.remote.inference.groq.groq_utils import (
+    _map_finish_reason_to_stop_reason,
+    _convert_groq_tool_call,
+)
 
 from llama_stack.providers.utils.inference.prompt_adapter import (
     convert_image_content_to_url,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAICompatCompletionChoiceDelta(BaseModel):
@@ -170,14 +178,37 @@ def process_completion_response(response: OpenAICompatCompletionResponse, format
 
 
 def process_chat_completion_response(
-    response: OpenAICompatCompletionResponse, formatter: ChatFormat
+    response: OpenAICompatCompletionResponse,
+    formatter: ChatFormat,
+    request: ChatCompletionRequest,
 ) -> ChatCompletionResponse:
     choice = response.choices[0]
 
-    # TODO: This does not work well with tool calls for vLLM remote provider
     raw_message = formatter.decode_assistant_message_from_content(
         text_from_choice(choice), get_stop_reason(choice.finish_reason)
     )
+
+    # NOTE: If we do not set tools in chat-completion request, we should not
+    # expect the ToolCall in the response. Instead, we should return the raw
+    # response from the model.
+    if raw_message.tool_calls:
+        if not request.tools:
+            raw_message.tool_calls = []
+            raw_message.content = text_from_choice(choice)
+        elif request.tools:
+            # only return tool_calls if provided in the request
+            new_tool_calls = []
+            request_tools = {t.tool_name: t for t in request.tools}
+            for t in raw_message.tool_calls:
+                if t.tool_name in request_tools:
+                    new_tool_calls.append(t)
+                else:
+                    logger.warning(f"Tool {t.tool_name} not found in request tools")
+
+            if len(new_tool_calls) < len(raw_message.tool_calls):
+                raw_message.tool_calls = new_tool_calls
+                raw_message.content = text_from_choice(choice)
+
     return ChatCompletionResponse(
         completion_message=CompletionMessage(
             content=raw_message.content,
@@ -225,117 +256,59 @@ async def process_completion_stream_response(
 
 
 async def process_chat_completion_stream_response(
-    stream: AsyncGenerator[OpenAICompatCompletionResponse, None], formatter: ChatFormat
+    stream: AsyncGenerator[OpenAICompatCompletionResponse, None],
+    formatter: ChatFormat,
+    request: ChatCompletionRequest,
 ) -> AsyncGenerator:
-    yield ChatCompletionResponseStreamChunk(
-        event=ChatCompletionResponseEvent(
-            event_type=ChatCompletionResponseEventType.start,
-            delta=TextDelta(text=""),
-        )
-    )
-
-    buffer = ""
-    ipython = False
-    stop_reason = None
-
+    event_type = ChatCompletionResponseEventType.start
     async for chunk in stream:
         choice = chunk.choices[0]
-        finish_reason = choice.finish_reason
-
-        if finish_reason:
-            if stop_reason is None and finish_reason in ["stop", "eos", "eos_token"]:
-                stop_reason = StopReason.end_of_turn
-            elif stop_reason is None and finish_reason == "length":
-                stop_reason = StopReason.out_of_tokens
-            break
-
-        text = text_from_choice(choice)
-        if not text:
-            # Sometimes you get empty chunks from providers
-            continue
-
-        # check if its a tool call ( aka starts with <|python_tag|> )
-        if not ipython and text.startswith("<|python_tag|>"):
-            ipython = True
+        if choice.finish_reason:
             yield ChatCompletionResponseStreamChunk(
                 event=ChatCompletionResponseEvent(
-                    event_type=ChatCompletionResponseEventType.progress,
-                    delta=ToolCallDelta(
-                        tool_call="",
-                        parse_status=ToolCallParseStatus.started,
-                    ),
+                    event_type=ChatCompletionResponseEventType.complete,
+                    delta=TextDelta(text=choice.delta.content or ""),
+                    logprobs=None,
+                    stop_reason=_map_finish_reason_to_stop_reason(choice.finish_reason),
                 )
             )
-            buffer += text
-            continue
+        elif choice.delta.tool_calls:
+            # We assume there is only one tool call per chunk, but emit a warning in case we're wrong
+            if len(choice.delta.tool_calls) > 1:
+                warnings.warn("Groq returned multiple tool calls in one chunk. Using the first one, ignoring the rest.")
 
-        if text == "<|eot_id|>":
-            stop_reason = StopReason.end_of_turn
-            text = ""
-            continue
-        elif text == "<|eom_id|>":
-            stop_reason = StopReason.end_of_message
-            text = ""
-            continue
-
-        if ipython:
-            buffer += text
-            delta = ToolCallDelta(
-                tool_call=text,
-                parse_status=ToolCallParseStatus.in_progress,
-            )
-
-            yield ChatCompletionResponseStreamChunk(
-                event=ChatCompletionResponseEvent(
-                    event_type=ChatCompletionResponseEventType.progress,
-                    delta=delta,
-                    stop_reason=stop_reason,
+            # We assume Groq produces fully formed tool calls for each chunk
+            tool_call = _convert_groq_tool_call(choice.delta.tool_calls[0])
+            if isinstance(tool_call, ToolCall):
+                yield ChatCompletionResponseStreamChunk(
+                    event=ChatCompletionResponseEvent(
+                        event_type=event_type,
+                        delta=ToolCallDelta(
+                            tool_call=tool_call,
+                            parse_status=ToolCallParseStatus.succeeded,
+                        ),
+                    )
                 )
-            )
+            else:
+                # Otherwise it's an UnparseableToolCall - return the raw tool call
+                yield ChatCompletionResponseStreamChunk(
+                    event=ChatCompletionResponseEvent(
+                        event_type=event_type,
+                        delta=ToolCallDelta(
+                            tool_call=tool_call.model_dump_json(),
+                            parse_status=ToolCallParseStatus.failed,
+                        ),
+                    )
+                )
         else:
-            buffer += text
             yield ChatCompletionResponseStreamChunk(
                 event=ChatCompletionResponseEvent(
-                    event_type=ChatCompletionResponseEventType.progress,
-                    delta=TextDelta(text=text),
-                    stop_reason=stop_reason,
+                    event_type=event_type,
+                    delta=TextDelta(text=choice.delta.content or ""),
+                    logprobs=None,
                 )
             )
-
-    # parse tool calls and report errors
-    message = formatter.decode_assistant_message_from_content(buffer, stop_reason)
-    parsed_tool_calls = len(message.tool_calls) > 0
-    if ipython and not parsed_tool_calls:
-        yield ChatCompletionResponseStreamChunk(
-            event=ChatCompletionResponseEvent(
-                event_type=ChatCompletionResponseEventType.progress,
-                delta=ToolCallDelta(
-                    tool_call="",
-                    parse_status=ToolCallParseStatus.failed,
-                ),
-                stop_reason=stop_reason,
-            )
-        )
-
-    for tool_call in message.tool_calls:
-        yield ChatCompletionResponseStreamChunk(
-            event=ChatCompletionResponseEvent(
-                event_type=ChatCompletionResponseEventType.progress,
-                delta=ToolCallDelta(
-                    tool_call=tool_call,
-                    parse_status=ToolCallParseStatus.succeeded,
-                ),
-                stop_reason=stop_reason,
-            )
-        )
-
-    yield ChatCompletionResponseStreamChunk(
-        event=ChatCompletionResponseEvent(
-            event_type=ChatCompletionResponseEventType.complete,
-            delta=TextDelta(text=""),
-            stop_reason=stop_reason,
-        )
-    )
+        event_type = ChatCompletionResponseEventType.progress
 
 
 async def convert_message_to_openai_dict(message: Message, download: bool = False) -> dict:

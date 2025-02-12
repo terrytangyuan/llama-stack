@@ -5,6 +5,7 @@
 # the root directory of this source tree.
 import json
 import logging
+from pprint import pprint
 from typing import AsyncGenerator, List, Optional, Union
 
 from llama_models.llama3.api import StopReason, ToolCall
@@ -223,16 +224,26 @@ class VLLMInferenceAdapter(Inference, ModelsProtocolPrivate):
 
     async def _stream_chat_completion(self, request: ChatCompletionRequest, client: OpenAI) -> AsyncGenerator:
         params = await self._get_params(request)
+        # async def _to_async_generator():
+        #     s = client.chat.completions.create(**params)
+        #     for chunk in s:
+        #         yield chunk
+        #
+        # stream = _to_async_generator()
+        # yield convert_chat_completion_response_stream(stream)
 
         # TODO: Can we use client.completions.acreate() or maybe there is another way to directly create an async
         #  generator so this wrapper is not necessary?
+
         async def _to_async_generator():
             s = client.chat.completions.create(**params)
             for chunk in s:
                 yield chunk
 
         stream = _to_async_generator()
-        async for chunk in process_chat_completion_stream_response(stream, self.formatter):
+        async for chunk in process_chat_completion_stream_response(stream, self.formatter, request):
+            print("chunk\n")
+            pprint(chunk)
             yield chunk
 
     async def _nonstream_completion(self, request: CompletionRequest) -> CompletionResponse:
@@ -290,6 +301,8 @@ class VLLMInferenceAdapter(Inference, ModelsProtocolPrivate):
             else:
                 raise ValueError(f"Unknown response format {fmt.type}")
 
+        print("input dict\n")
+        pprint(input_dict)
         return {
             "model": request.model,
             **input_dict,

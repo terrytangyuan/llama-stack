@@ -8,6 +8,8 @@ import json
 import warnings
 from typing import AsyncGenerator, Literal, Union
 
+from llama_models.datatypes import SamplingParams, GreedySamplingStrategy, TopPSamplingStrategy, TopKSamplingStrategy
+
 from groq import Stream
 from groq.types.chat.chat_completion import ChatCompletion
 from groq.types.chat.chat_completion_assistant_message_param import (
@@ -50,9 +52,21 @@ from llama_stack.apis.inference import (
     ToolDefinition,
     ToolPromptFormat,
 )
-from llama_stack.providers.utils.inference.openai_compat import (
-    get_sampling_strategy_options,
-)
+
+
+def get_sampling_strategy_options(params: SamplingParams) -> dict:
+    options = {}
+    if isinstance(params.strategy, GreedySamplingStrategy):
+        options["temperature"] = 0.0
+    elif isinstance(params.strategy, TopPSamplingStrategy):
+        options["temperature"] = params.strategy.temperature
+        options["top_p"] = params.strategy.top_p
+    elif isinstance(params.strategy, TopKSamplingStrategy):
+        options["top_k"] = params.strategy.top_k
+    else:
+        raise ValueError(f"Unsupported sampling strategy: {params.strategy}")
+
+    return options
 
 
 def convert_chat_completion_request(
@@ -255,9 +269,9 @@ class UnparseableToolCall(BaseModel):
     Mirrors the ToolCall schema, but with arguments as a string.
     """
 
-    call_id: str
-    tool_name: str
-    arguments: str
+    call_id: str = ""
+    tool_name: str = ""
+    arguments: str = ""
 
 
 def _convert_groq_tool_call(
@@ -267,13 +281,14 @@ def _convert_groq_tool_call(
     Convert a Groq tool call to a ToolCall.
     Returns an UnparseableToolCall if the tool call is not valid JSON.
     """
+    # arguments = json.loads(tool_call.function.arguments)
     try:
         arguments = json.loads(tool_call.function.arguments)
     except Exception as e:
         return UnparseableToolCall(
-            call_id=tool_call.id,
-            tool_name=tool_call.function.name,
-            arguments=tool_call.function.arguments,
+            call_id=tool_call.id or "",
+            tool_name=tool_call.function.name or "",
+            arguments=tool_call.function.arguments or "",
         )
 
     return ToolCall(
