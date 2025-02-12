@@ -281,7 +281,6 @@ def _convert_groq_tool_call(
     Convert a Groq tool call to a ToolCall.
     Returns an UnparseableToolCall if the tool call is not valid JSON.
     """
-    # arguments = json.loads(tool_call.function.arguments)
     try:
         arguments = json.loads(tool_call.function.arguments)
     except Exception as e:
@@ -290,6 +289,11 @@ def _convert_groq_tool_call(
             tool_name=tool_call.function.name or "",
             arguments=tool_call.function.arguments or "",
         )
+        # return ToolCall(
+        #     call_id=tool_call.id or "",
+        #     tool_name=tool_call.function.name or "",
+        #     arguments=tool_call.function.arguments or {},
+        # )
 
     return ToolCall(
         call_id=tool_call.id,

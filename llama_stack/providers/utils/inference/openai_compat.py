@@ -16,7 +16,7 @@ from llama_models.datatypes import (
 )
 
 from llama_models.llama3.api.chat_format import ChatFormat
-from llama_models.llama3.api.datatypes import StopReason, ToolCall
+from llama_models.llama3.api.datatypes import StopReason
 from pydantic import BaseModel
 
 from llama_stack.apis.common.content_types import (
@@ -42,6 +42,7 @@ from llama_stack.apis.inference import (
 from llama_stack.providers.remote.inference.groq.groq_utils import (
     _map_finish_reason_to_stop_reason,
     _convert_groq_tool_call,
+    UnparseableToolCall,
 )
 
 from llama_stack.providers.utils.inference.prompt_adapter import (
@@ -262,10 +263,22 @@ async def process_chat_completion_stream_response(
     request: ChatCompletionRequest,
 ) -> AsyncGenerator:
     event_type = ChatCompletionResponseEventType.start
+    tool_call_buf = UnparseableToolCall()
     async for chunk in stream:
         choice = chunk.choices[0]
         if choice.finish_reason:
-            print("if block\n")
+            print("if block")
+            print("tool_call buff")
+            pprint(tool_call_buf)
+            yield ChatCompletionResponseStreamChunk(
+                event=ChatCompletionResponseEvent(
+                    event_type=event_type,
+                    delta=ToolCallDelta(
+                        tool_call=tool_call_buf.model_dump_json(),
+                        parse_status=ToolCallParseStatus.succeeded,
+                    ),
+                )
+            )
             yield ChatCompletionResponseStreamChunk(
                 event=ChatCompletionResponseEvent(
                     event_type=ChatCompletionResponseEventType.complete,
@@ -275,38 +288,22 @@ async def process_chat_completion_stream_response(
                 )
             )
         elif choice.delta.tool_calls:
-            print("elif block\n")
+            print("elif block")
             # We assume there is only one tool call per chunk, but emit a warning in case we're wrong
             if len(choice.delta.tool_calls) > 1:
                 warnings.warn("Groq returned multiple tool calls in one chunk. Using the first one, ignoring the rest.")
 
             # We assume Groq produces fully formed tool calls for each chunk
             tool_call = _convert_groq_tool_call(choice.delta.tool_calls[0])
-            print("tool_call\n")
+            print("tool_call")
             pprint(tool_call)
-            if isinstance(tool_call, ToolCall):
-                print("elif -if block\n")
-                yield ChatCompletionResponseStreamChunk(
-                    event=ChatCompletionResponseEvent(
-                        event_type=event_type,
-                        delta=ToolCallDelta(
-                            tool_call=tool_call,
-                            parse_status=ToolCallParseStatus.succeeded,
-                        ),
-                    )
-                )
-            else:
-                print("elif -else block\n")
-                # Otherwise it's an UnparseableToolCall - return the raw tool call
-                yield ChatCompletionResponseStreamChunk(
-                    event=ChatCompletionResponseEvent(
-                        event_type=event_type,
-                        delta=ToolCallDelta(
-                            tool_call=tool_call.model_dump_json(),
-                            parse_status=ToolCallParseStatus.failed,
-                        ),
-                    )
-                )
+
+            tool_call_buf.tool_name += tool_call.tool_name
+            tool_call_buf.call_id += tool_call.call_id
+            tool_call_buf.arguments += tool_call.arguments
+
+            print("tool_call buff")
+            pprint(tool_call_buf)
         else:
             print("else block\n")
             yield ChatCompletionResponseStreamChunk(
