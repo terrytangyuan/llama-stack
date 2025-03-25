@@ -96,7 +96,7 @@ class StopReason(Enum):
     end_of_turn = "end_of_turn"
     end_of_message = "end_of_message"
     out_of_tokens = "out_of_tokens"
-
+    unknown = "unknown"
 
 class RawMediaItem(BaseModel):
     type: Literal["image"] = "image"

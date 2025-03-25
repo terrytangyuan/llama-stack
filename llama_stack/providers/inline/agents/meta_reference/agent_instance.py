@@ -555,7 +555,7 @@ class ChatAgent(ShieldRunnerMixin):
             n_iter += 1
             await self.storage.set_num_infer_iters_in_turn(session_id, turn_id, n_iter)
 
-            stop_reason = stop_reason or StopReason.out_of_tokens
+            stop_reason = stop_reason or StopReason.unknown
 
             # If tool calls are parsed successfully,
             # if content is not made null the tool call str will also be in the content
